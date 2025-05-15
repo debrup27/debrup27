@@ -3,7 +3,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Added manual trigger option
+  workflow_dispatch:
   schedule:
     - cron: "0 4 * * *"
 jobs:
@@ -11,23 +11,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3  # Updated to v3
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
-      - name: Set up Python
-        uses: actions/setup-python@v4  # Updated to v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10'  # Updated Python version
+          python-version: '3.10'
       - name: Configure pip cache
-        uses: actions/cache@v3  # Updated from v2 to v3
+        uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/cache/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: ${{ runner.os }}-pip-
+      - name: Create cache directory
+        run: mkdir -p cache
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f cache/requirements.txt ]; then pip install -r cache/requirements.txt; else pip install python-dateutil requests lxml; fi
+          pip install python-dateutil requests lxml
       - name: Update README file
         env:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
