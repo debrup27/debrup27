@@ -320,19 +320,38 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
     """
-    tree = etree.parse(filename)
-    root = tree.getroot()
-    # Add this line to your svg_overwrite function
-    justify_format(root, 'age_data', age_data, 22)  # Add appropriate length parameter
-    justify_format(root, 'commit_data', commit_data, 22)
-    justify_format(root, 'star_data', star_data, 14)
-    justify_format(root, 'repo_data', repo_data, 6)
-    justify_format(root, 'contrib_data', contrib_data)
-    justify_format(root, 'follower_data', follower_data, 10)
-    justify_format(root, 'loc_data', loc_data[2], 9)
-    justify_format(root, 'loc_add', loc_data[0])
-    justify_format(root, 'loc_del', loc_data[1], 7)
-    tree.write(filename, encoding='utf-8', xml_declaration=True)
+    try:
+        tree = etree.parse(filename)
+        root = tree.getroot()
+        
+        # Validate that age_data element exists before updating
+        age_element = root.find(f".//*[@id='age_data']")
+        if age_element is None:
+            print(f"Warning: 'age_data' element not found in {filename}")
+        else:
+            # Debug info - print current value
+            print(f"Current age_data value: '{age_element.text}'")
+            # Update age element directly
+            age_element.text = age_data
+            print(f"Updated age_data to: '{age_data}'")
+        
+        # Update other elements normally
+        justify_format(root, 'commit_data', commit_data, 22)
+        justify_format(root, 'star_data', star_data, 14)
+        justify_format(root, 'repo_data', repo_data, 6)
+        justify_format(root, 'contrib_data', contrib_data)
+        justify_format(root, 'follower_data', follower_data, 10)
+        justify_format(root, 'loc_data', loc_data[2], 9)
+        justify_format(root, 'loc_add', loc_data[0])
+        justify_format(root, 'loc_del', loc_data[1], 7)
+        
+        # Write updated SVG
+        tree.write(filename, encoding='utf-8', xml_declaration=True)
+        print(f"Successfully updated {filename}")
+    except Exception as e:
+        print(f"Error updating SVG {filename}: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 def justify_format(root, element_id, new_text, length=0):
@@ -358,7 +377,10 @@ def find_and_replace(root, element_id, new_text):
     """
     element = root.find(f".//*[@id='{element_id}']")
     if element is not None:
+        # Just update the text directly
         element.text = new_text
+    else:
+        print(f"Warning: Element with id '{element_id}' not found in SVG")
 
 
 def commit_counter(comment_size):
