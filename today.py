@@ -439,54 +439,6 @@ def formatter(query_type, difference, funct_return=False, whitespace=0):
     return funct_return
 # Add this function to your code
 
-def update_readme_with_timestamp():
-    """
-    Updates the README.md file with timestamped references to SVG files
-    to force GitHub to load the latest versions
-    """
-    timestamp = int(time.time())
-    readme_path = "README.md"
-    
-    try:
-        with open(readme_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # Replace SVG references with timestamped versions
-        import re
-        
-        # Handle raw GitHub URLs in source/srcset attributes
-        content = re.sub(
-            r'srcset="https://raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/(dark_mode\.svg)(\?t=\d+)?"',
-            f'srcset="https://raw.githubusercontent.com/debrup27/debrup27/main/dark_mode.svg?t={timestamp}"',
-            content
-        )
-        
-        # Handle raw GitHub URLs in regular img src attributes
-        content = re.sub(
-            r'src="https://raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/(light_mode\.svg)(\?t=\d+)?"',
-            f'src="https://raw.githubusercontent.com/debrup27/debrup27/main/light_mode.svg?t={timestamp}"',
-            content
-        )
-        
-        # Also handle relative URLs (just in case)
-        content = re.sub(
-            r'srcset="(dark_mode\.svg)(\?t=\d+)?"',
-            f'srcset="dark_mode.svg?t={timestamp}"',
-            content
-        )
-        content = re.sub(
-            r'src="(light_mode\.svg)(\?t=\d+)?"',
-            f'src="light_mode.svg?t={timestamp}"',
-            content
-        )
-        
-        # Write the updated content back to README.md
-        with open(readme_path, "w", encoding="utf-8") as f:
-            f.write(content)
-            
-        print(f"Updated README.md with timestamped SVG references ({timestamp})")
-    except Exception as e:
-        print(f"Error updating README.md: {str(e)}")
 
 if __name__ == '__main__':
     """
@@ -528,4 +480,3 @@ if __name__ == '__main__':
 
     print('Total GitHub GraphQL API calls:', '{:>3}'.format(sum(QUERY_COUNT.values())))
     for funct_name, count in QUERY_COUNT.items(): print('{:<28}'.format('   ' + funct_name + ':'), '{:>6}'.format(count))
-    update_readme_with_timestamp()
