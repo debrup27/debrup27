@@ -452,30 +452,31 @@ def update_readme_with_timestamp():
             content = f.read()
         
         # Replace SVG references with timestamped versions
-        # Adjust these patterns to match your actual README format
         import re
         
-        # Update markdown image references
+        # Handle raw GitHub URLs in source/srcset attributes
         content = re.sub(
-            r'!\[.*?\]\((dark_mode\.svg)(\?t=\d+)?\)',
-            f'![GitHub Stats](dark_mode.svg?t={timestamp})',
-            content
-        )
-        content = re.sub(
-            r'!\[.*?\]\((light_mode\.svg)(\?t=\d+)?\)',
-            f'![GitHub Stats](light_mode.svg?t={timestamp})',
+            r'srcset="https://raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/(dark_mode\.svg)(\?t=\d+)?"',
+            f'srcset="https://raw.githubusercontent.com/debrup27/debrup27/main/dark_mode.svg?t={timestamp}"',
             content
         )
         
-        # Update HTML image references if they exist
+        # Handle raw GitHub URLs in regular img src attributes
         content = re.sub(
-            r'<img.*?src=["\'](dark_mode\.svg)(\?t=\d+)?["\'].*?>',
-            f'<img src="dark_mode.svg?t={timestamp}" alt="GitHub Stats">',
+            r'src="https://raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/(light_mode\.svg)(\?t=\d+)?"',
+            f'src="https://raw.githubusercontent.com/debrup27/debrup27/main/light_mode.svg?t={timestamp}"',
+            content
+        )
+        
+        # Also handle relative URLs (just in case)
+        content = re.sub(
+            r'srcset="(dark_mode\.svg)(\?t=\d+)?"',
+            f'srcset="dark_mode.svg?t={timestamp}"',
             content
         )
         content = re.sub(
-            r'<img.*?src=["\'](light_mode\.svg)(\?t=\d+)?["\'].*?>',
-            f'<img src="light_mode.svg?t={timestamp}" alt="GitHub Stats">',
+            r'src="(light_mode\.svg)(\?t=\d+)?"',
+            f'src="light_mode.svg?t={timestamp}"',
             content
         )
         
