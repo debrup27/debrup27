@@ -437,7 +437,55 @@ def formatter(query_type, difference, funct_return=False, whitespace=0):
     if whitespace:
         return f"{'{:,}'.format(funct_return): <{whitespace}}"
     return funct_return
+# Add this function to your code
 
+def update_readme_with_timestamp():
+    """
+    Updates the README.md file with timestamped references to SVG files
+    to force GitHub to load the latest versions
+    """
+    timestamp = int(time.time())
+    readme_path = "README.md"
+    
+    try:
+        with open(readme_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Replace SVG references with timestamped versions
+        # Adjust these patterns to match your actual README format
+        import re
+        
+        # Update markdown image references
+        content = re.sub(
+            r'!\[.*?\]\((dark_mode\.svg)(\?t=\d+)?\)',
+            f'![GitHub Stats](dark_mode.svg?t={timestamp})',
+            content
+        )
+        content = re.sub(
+            r'!\[.*?\]\((light_mode\.svg)(\?t=\d+)?\)',
+            f'![GitHub Stats](light_mode.svg?t={timestamp})',
+            content
+        )
+        
+        # Update HTML image references if they exist
+        content = re.sub(
+            r'<img.*?src=["\'](dark_mode\.svg)(\?t=\d+)?["\'].*?>',
+            f'<img src="dark_mode.svg?t={timestamp}" alt="GitHub Stats">',
+            content
+        )
+        content = re.sub(
+            r'<img.*?src=["\'](light_mode\.svg)(\?t=\d+)?["\'].*?>',
+            f'<img src="light_mode.svg?t={timestamp}" alt="GitHub Stats">',
+            content
+        )
+        
+        # Write the updated content back to README.md
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            
+        print(f"Updated README.md with timestamped SVG references ({timestamp})")
+    except Exception as e:
+        print(f"Error updating README.md: {str(e)}")
 
 if __name__ == '__main__':
     """
@@ -471,7 +519,7 @@ if __name__ == '__main__':
 
     svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1])
     svg_overwrite('light_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1])
-
+    
     # move cursor to override 'Calculation times:' with 'Total function time:' and the total function time, then move cursor back
     print('\033[F\033[F\033[F\033[F\033[F\033[F\033[F\033[F',
         '{:<21}'.format('Total function time:'), '{:>11}'.format('%.4f' % (user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time)),
@@ -479,3 +527,4 @@ if __name__ == '__main__':
 
     print('Total GitHub GraphQL API calls:', '{:>3}'.format(sum(QUERY_COUNT.values())))
     for funct_name, count in QUERY_COUNT.items(): print('{:<28}'.format('   ' + funct_name + ':'), '{:>6}'.format(count))
+    update_readme_with_timestamp()
