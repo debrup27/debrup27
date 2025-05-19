@@ -4,4 +4,6 @@
     <img alt="debrup27's GitHub Profile README" src="https://raw.githubusercontent.com/debrup27/debrup27/main/light_mode.svg">
   </picture>
 </a>
-![visitors](https://visitor-badge.glitch.me/badge?page_id=debrup27&left_color=green&right_color=red)
+![Visitor Count](https://visitor-badge.glitch.me/badge?page_id=debrup27.debrup27)
+
+
