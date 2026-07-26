@@ -13,6 +13,7 @@ import hashlib
 HEADERS = {'authorization': 'token '+ os.environ['ACCESS_TOKEN']}
 USER_NAME = os.environ['USER_NAME'] # 'Andrew6rant'
 QUERY_COUNT = {'user_getter': 0, 'follower_getter': 0, 'graph_repos_stars': 0, 'recursive_loc': 0, 'graph_commits': 0, 'loc_query': 0}
+UNREADABLE_REPOS = 0 # largest number of repositories a single query came back blind to
 
 
 def daily_readme(birthday):
@@ -46,8 +47,26 @@ def simple_request(func_name, query, variables):
     """
     request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables':variables}, headers=HEADERS)
     if request.status_code == 200:
+        # A 200 can still carry a GraphQL errors array, which is how partial/null data arrives.
+        # Print it here or it stays invisible until something downstream trips over a None.
+        errors = request.json().get('errors')
+        if errors:
+            print('GraphQL errors in', func_name + ':', errors)
         return request
     raise Exception(func_name, ' has failed with a', request.status_code, request.text, QUERY_COUNT)
+
+
+def visible_nodes(edges):
+    """
+    Drops edges whose node is None.
+    GitHub answers 200 with node == None for repositories the token cannot read, which happens
+    when ACCESS_TOKEN is a fine-grained PAT scoped to selected repositories instead of all of
+    them. Filtering here keeps every caller that indexes ['node'][...] from raising TypeError.
+    """
+    global UNREADABLE_REPOS
+    visible = [edge for edge in edges if edge['node'] is not None]
+    UNREADABLE_REPOS = max(UNREADABLE_REPOS, len(edges) - len(visible))
+    return visible
 
 
 def graph_commits(start_date, end_date):
@@ -70,7 +89,7 @@ def graph_commits(start_date, end_date):
     return int(request.json()['data']['user']['contributionsCollection']['contributionCalendar']['totalContributions'])
 
 
-def graph_repos_stars(count_type, owner_affiliation, cursor=None, add_loc=0, del_loc=0):
+def graph_repos_stars(count_type, owner_affiliation):
     """
     Uses GitHub's GraphQL v4 API to return my total repository, star, or lines of code count.
     """
@@ -97,13 +116,12 @@ def graph_repos_stars(count_type, owner_affiliation, cursor=None, add_loc=0, del
             }
         }
     }'''
-    variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': cursor}
+    variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': None}
     request = simple_request(graph_repos_stars.__name__, query, variables)
-    if request.status_code == 200:
-        if count_type == 'repos':
-            return request.json()['data']['user']['repositories']['totalCount']
-        elif count_type == 'stars':
-            return stars_counter(request.json()['data']['user']['repositories']['edges'])
+    if count_type == 'repos':
+        return request.json()['data']['user']['repositories']['totalCount']
+    elif count_type == 'stars':
+        return stars_counter(visible_nodes(request.json()['data']['user']['repositories']['edges']))
 
 
 def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, deletion_total=0, my_commits=0, cursor=None):
@@ -171,7 +189,7 @@ def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, additio
     else: return recursive_loc(owner, repo_name, data, cache_comment, addition_total, deletion_total, my_commits, history['pageInfo']['endCursor'])
 
 
-def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None, edges=[]):
+def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None, edges=None):
     """
     Uses GitHub's GraphQL v4 API to query all the repositories I have access to (with respect to owner_affiliation)
     Queries 60 repos at a time, because larger queries give a 502 timeout error and smaller queries send too many
@@ -206,13 +224,15 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None,
             }
         }
     }'''
+    edges = edges if edges is not None else []
     variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': cursor}
     request = simple_request(loc_query.__name__, query, variables)
-    if request.json()['data']['user']['repositories']['pageInfo']['hasNextPage']:   # If repository data has another page
-        edges += request.json()['data']['user']['repositories']['edges']            # Add on to the LoC count
-        return loc_query(owner_affiliation, comment_size, force_cache, request.json()['data']['user']['repositories']['pageInfo']['endCursor'], edges)
+    repositories = request.json()['data']['user']['repositories']
+    if repositories['pageInfo']['hasNextPage']:                    # If repository data has another page
+        edges += visible_nodes(repositories['edges'])              # Add on to the LoC count
+        return loc_query(owner_affiliation, comment_size, force_cache, repositories['pageInfo']['endCursor'], edges)
     else:
-        return cache_builder(edges + request.json()['data']['user']['repositories']['edges'], comment_size, force_cache)
+        return cache_builder(edges + visible_nodes(repositories['edges']), comment_size, force_cache)
 
 
 def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
@@ -276,25 +296,6 @@ def flush_cache(edges, filename, comment_size):
             f.write(hashlib.sha256(node['node']['nameWithOwner'].encode('utf-8')).hexdigest() + ' 0 0 0 0\n')
 
 
-def add_archive():
-    """
-    Several repositories I have contributed to have since been deleted.
-    This function adds them using their last known data
-    """
-    with open('cache/repository_archive.txt', 'r') as f:
-        data = f.readlines()
-    old_data = data
-    data = data[7:len(data)-3] # remove the comment block    
-    added_loc, deleted_loc, added_commits = 0, 0, 0
-    contributed_repos = len(data)
-    for line in data:
-        repo_hash, total_commits, my_commits, *loc = line.split()
-        added_loc += int(loc[0])
-        deleted_loc += int(loc[1])
-        if (my_commits.isdigit()): added_commits += int(my_commits)
-    added_commits += int(old_data[-1].split()[4][:-1])
-    return [added_loc, deleted_loc, added_loc - deleted_loc, added_commits, contributed_repos]
-
 def force_close_file(data, cache_comment):
     """
     Forces the file to close, preserving whatever data was written to it
@@ -320,38 +321,25 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     """
     Parse SVG files and update elements with my age, commits, stars, repositories, and lines written
     """
-    try:
-        tree = etree.parse(filename)
-        root = tree.getroot()
-        
-        # Validate that age_data element exists before updating
-        age_element = root.find(f".//*[@id='age_data']")
-        if age_element is None:
-            print(f"Warning: 'age_data' element not found in {filename}")
-        else:
-            # Debug info - print current value
-            print(f"Current age_data value: '{age_element.text}'")
-            # Update age element directly
-            age_element.text = age_data
-            print(f"Updated age_data to: '{age_data}'")
-        
-        # Update other elements normally
-        justify_format(root, 'commit_data', commit_data, 22)
-        justify_format(root, 'star_data', star_data, 14)
-        justify_format(root, 'repo_data', repo_data, 6)
-        justify_format(root, 'contrib_data', contrib_data)
-        justify_format(root, 'follower_data', follower_data, 10)
-        justify_format(root, 'loc_data', loc_data[2], 9)
-        justify_format(root, 'loc_add', loc_data[0])
-        justify_format(root, 'loc_del', loc_data[1], 7)
-        
-        # Write updated SVG
-        tree.write(filename, encoding='utf-8', xml_declaration=True)
-        print(f"Successfully updated {filename}")
-    except Exception as e:
-        print(f"Error updating SVG {filename}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    # resolve_entities/no_network off: these files are ours, but an XML parser that expands
+    # entities and fetches remote DTDs is free surface area we have no use for.
+    parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    tree = etree.parse(filename, parser)
+    root = tree.getroot()
+
+    # Lengths are the width of the dots-plus-value field, chosen so every row in the SVG
+    # ends at the same column. Changing the labels in the SVG means re-deriving these.
+    justify_format(root, 'age_data', age_data, 55)
+    justify_format(root, 'commit_data', commit_data, 26)
+    justify_format(root, 'star_data', star_data, 17)
+    justify_format(root, 'repo_data', repo_data, 6)
+    justify_format(root, 'contrib_data', contrib_data, 4)
+    justify_format(root, 'follower_data', follower_data, 13)
+    justify_format(root, 'loc_data', loc_data[2], 9)
+    justify_format(root, 'loc_add', loc_data[0])
+    justify_format(root, 'loc_del', loc_data[1], 7)
+
+    tree.write(filename, encoding='utf-8', xml_declaration=True)
 
 
 def justify_format(root, element_id, new_text, length=0):
@@ -459,7 +447,6 @@ def formatter(query_type, difference, funct_return=False, whitespace=0):
     if whitespace:
         return f"{'{:,}'.format(funct_return): <{whitespace}}"
     return funct_return
-# Add this function to your code
 
 
 if __name__ == '__main__':
@@ -482,14 +469,6 @@ if __name__ == '__main__':
     contrib_data, contrib_time = perf_counter(graph_repos_stars, 'repos', ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'])
     follower_data, follower_time = perf_counter(follower_getter, USER_NAME)
 
-    # several repositories that I've contributed to have since been deleted.
-    # if OWNER_ID == {'id': 'U_kgDOCgSTPw'}: # only calculate for user debrup27
-    #     archived_data = add_archive()
-    #     for index in range(len(total_loc)-1):
-    #         total_loc[index] += archived_data[index]
-    #     contrib_data += archived_data[-1]
-    #     commit_data += int(archived_data[-2])
-
     for index in range(len(total_loc)-1): total_loc[index] = '{:,}'.format(total_loc[index]) # format added, deleted, and total LOC
 
     svg_overwrite('dark_mode.svg', age_data, commit_data, star_data, repo_data, contrib_data, follower_data, total_loc[:-1])
@@ -499,6 +478,10 @@ if __name__ == '__main__':
     print('\033[F\033[F\033[F\033[F\033[F\033[F\033[F\033[F',
         '{:<21}'.format('Total function time:'), '{:>11}'.format('%.4f' % (user_time + age_time + loc_time + commit_time + star_time + repo_time + contrib_time)),
         ' s \033[E\033[E\033[E\033[E\033[E\033[E\033[E\033[E', sep='')
+
+    if UNREADABLE_REPOS:
+        print('warning:', UNREADABLE_REPOS, 'repositories were invisible to ACCESS_TOKEN and are missing from these stats.')
+        print('         Set the fine-grained PAT to "All repositories" so repos created later are included automatically.')
 
     print('Total GitHub GraphQL API calls:', '{:>3}'.format(sum(QUERY_COUNT.values())))
     for funct_name, count in QUERY_COUNT.items(): print('{:<28}'.format('   ' + funct_name + ':'), '{:>6}'.format(count))
